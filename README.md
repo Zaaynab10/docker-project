@@ -120,6 +120,3 @@ Refer to `.env.example` for complete documentation of all available variables.
 - JavaScript: `src/public/js/app.js`
 - Layout: `src/Views/Tasks.php`
 
-## License
-
-MIT License - See LICENSE file for details.
