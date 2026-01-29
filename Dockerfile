@@ -1,4 +1,4 @@
-FROM php:8.2-apache
+FROM php:8.3-fpm-alpine
 
 # Enable required Apache modules
 RUN a2enmod rewrite
