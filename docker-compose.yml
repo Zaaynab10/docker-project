@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # MySQL Service
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.45
     container_name: todo_mysql
     restart: unless-stopped
     environment:
@@ -12,12 +12,10 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
-      # Persistent volume for database data
       - mysql_data:/var/lib/mysql
-      # Initialization script
       - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "mysql", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       timeout: 10s
       retries: 5
       interval: 10s
@@ -29,6 +27,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: todo-app:dev
     container_name: todo_app
     restart: unless-stopped
     depends_on:
@@ -37,21 +36,21 @@ services:
     ports:
       - "${PHP_PORT}:80"
     volumes:
-      # Development code bind mount
+      # Bind mount for dev
       - ./src:/var/www/html
     environment:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-      APP_ENV: ${APP_ENV}
-      APP_DEBUG: ${APP_DEBUG}
+      APP_ENV: development
+      APP_DEBUG: true
     networks:
       - app-network
 
-  # PhpMyAdmin (optionnel)
+  # PhpMyAdmin (optional)
   phpmyadmin:
-    image: phpmyadmin:latest
+    image: phpmyadmin:5.2.2
     container_name: todo_phpmyadmin
     restart: unless-stopped
     depends_on:
