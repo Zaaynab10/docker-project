@@ -1,0 +1,48 @@
+name: CI/CD Dockerisation App
+
+# Déclencheurs du workflow
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+# Variables d'environnement globales
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: dockerisation-app
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      #  Cloner le repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      #  Configurer Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      #  Authentification sur GHCR
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      #   Construire et pousser l'image
+      - name: Build and push dockerisation-app
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.actor }}/dockerisation-app:latest
+            ${{ env.REGISTRY }}/${{ github.actor }}/dockerisation-app:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
