@@ -6,8 +6,9 @@ document.addEventListener('DOMContentLoaded', function() {
         item.style.animation = `fadeInUp 0.3s ease ${index * 0.05}s both`;
     });
 
-    // Drag and Drop functionality - Simple and Robust
+    // Drag and Drop functionality - Fixed to prevent duplication
     let draggedElement = null;
+    let dropHandled = false; // Flag to prevent multiple drop events
 
     // Add drag events to all task items
     function initDragAndDrop() {
@@ -21,6 +22,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Drag start
             item.addEventListener('dragstart', function(e) {
                 draggedElement = this;
+                dropHandled = false; // Reset flag on new drag
                 this.classList.add('dragging');
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', this.dataset.id);
@@ -40,6 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     handle.style.opacity = '';
                 }
                 draggedElement = null;
+                dropHandled = false;
 
                 // Remove all drag-over classes
                 taskLists.forEach(list => list.classList.remove('drag-over'));
@@ -68,43 +71,73 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
-            // Drop
+            // Drop - Fixed version
             list.addEventListener('drop', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 this.classList.remove('drag-over');
 
-                if (!draggedElement) return;
+                // Prevent multiple drop handling
+                if (dropHandled || !draggedElement) return;
+                dropHandled = true;
 
                 const currentSection = draggedElement.closest('.task-section');
                 const targetSection = this.closest('.task-section');
                 const taskId = draggedElement.dataset.id;
 
-                console.log('Drop - Current:', currentSection?.querySelector('.section-title')?.textContent);
-                console.log('Drop - Target:', targetSection?.querySelector('.section-title')?.textContent);
+                // If no sections found, exit
+                if (!currentSection || !targetSection) {
+                    return;
+                }
 
-                // If different sections, toggle status
-                if (currentSection && targetSection && currentSection !== targetSection) {
-                    console.log('Different section - toggling task:', taskId);
-                    
-                    fetch('?action=toggle', {
+                const currentStatus = currentSection.dataset.status;
+                const targetStatus = targetSection.dataset.status;
+
+                // Get CSRF token from the target list's form
+                const csrfInput = targetSection.querySelector('input[name="csrf_token"]') ||
+                                 this.querySelector('input[name="csrf_token"]');
+                const csrfToken = csrfInput ? csrfInput.value : '';
+
+                // Get new order based on position in target list
+                const taskItemsInTarget = [...this.querySelectorAll('.task-item:not(.dragging)')];
+                const newOrder = taskItemsInTarget.findIndex(item => item.dataset.id === taskId);
+
+                // If different sections, MOVE the task (change status)
+                if (currentStatus !== targetStatus) {
+                    console.log('Different section - moving task:', taskId);
+
+                    // Calculate new order before any DOM manipulation
+                    const calculatedNewOrder = newOrder >= 0 ? newOrder : 0;
+
+                    // Send request to server FIRST
+                    fetch('?action=move', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded',
                         },
-                        body: 'id=' + taskId
+                        body: 'id=' + encodeURIComponent(taskId) +
+                              '&order=' + encodeURIComponent(calculatedNewOrder) +
+                              '&status=' + encodeURIComponent(targetStatus) +
+                              '&csrf_token=' + encodeURIComponent(csrfToken)
                     }).then(response => {
-                        console.log('Toggle response:', response.status);
                         if (response.ok) {
+                            console.log('Move successful, reloading...');
+                            // Only reload after successful server response
                             location.reload();
+                        } else {
+                            console.error('Move failed on server');
+                            dropHandled = false;
                         }
-                    }).catch(err => console.error('Toggle error:', err));
+                    }).catch(err => {
+                        console.error('Move error:', err);
+                        dropHandled = false;
+                    });
                 }
-                // Same section - reorder
-                else if (currentSection && targetSection && currentSection === targetSection) {
+                // Same section - reorder only
+                else if (currentStatus === targetStatus) {
                     console.log('Same section - reordering');
-                    
-                    // Get position relative to other items
+
+                    // Calculate position to insert
                     const listItems = [...this.querySelectorAll('.task-item:not(.dragging)')];
                     const mouseY = e.clientY;
                     
@@ -126,25 +159,44 @@ document.addEventListener('DOMContentLoaded', function() {
                         this.appendChild(draggedElement);
                     }
                     
-                    // Save order (optional)
-                    saveTaskOrder();
+                    // Save order to server after visual reorder
+                    setTimeout(() => saveTaskOrder(this), 50);
                 }
 
-                draggedElement = null;
+                // Reset after a short delay to allow for next drag
+                setTimeout(() => {
+                    dropHandled = false;
+                }, 100);
             });
         });
     }
 
     // Save task order
-    function saveTaskOrder() {
-        const order = [];
-        document.querySelectorAll('.task-item').forEach((item, index) => {
-            order.push({
-                id: item.dataset.id,
-                position: index
-            });
+    function saveTaskOrder(taskList) {
+        const taskIds = [];
+        const status = taskList.closest('.task-section').dataset.status || 'pending';
+        
+        taskList.querySelectorAll('.task-item').forEach((item, index) => {
+            taskIds.push(item.dataset.id);
         });
-        console.log('Order saved:', order);
+        
+        console.log('Saving order:', { status: status, ids: taskIds });
+        
+        // Get CSRF token from the form in this list
+        const csrfInput = taskList.querySelector('input[name="csrf_token"]');
+        const csrfToken = csrfInput ? csrfInput.value : '';
+        
+        fetch('?action=reorder', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'task_ids=' + encodeURIComponent(JSON.stringify(taskIds)) + 
+                  '&status=' + encodeURIComponent(status) + 
+                  '&csrf_token=' + encodeURIComponent(csrfToken)
+        }).then(response => {
+            console.log('Reorder response:', response.status);
+        }).catch(err => console.error('Reorder error:', err));
     }
 
     // Initialize
@@ -174,6 +226,20 @@ document.addEventListener('DOMContentLoaded', function() {
             submitBtn.disabled = !this.value.trim();
         });
         submitBtn.disabled = !titleInput.value.trim();
+    }
+
+    // Prevent double submission on task form
+    const taskForm = document.querySelector('.task-form');
+    if (taskForm) {
+        taskForm.addEventListener('submit', function(e) {
+            const btn = this.querySelector('button[type="submit"]');
+            if (btn) {
+                // Disable button immediately to prevent double submission
+                btn.disabled = true;
+                btn.dataset.originalText = btn.textContent;
+                btn.textContent = 'Adding...';
+            }
+        });
     }
 });
 

@@ -3,15 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="robots" content="noindex, nofollow">
     <title>Medical Task Manager</title>
     <link rel="stylesheet" href="public/css/style.css">
+    <!-- Security: CSP inline styles are allowed -->
 </head>
 <body>
     <div class="app-container">
         <?php
         // Get date format from config
         use App\Config\Config;
+        use App\Utils\CSRF;
+
         $dateFormat = Config::get('date.format', 'M d, Y - H:i');
+        // Get CSRF token once and reuse it
+        $csrfToken = CSRF::getToken() ?? CSRF::generate();
+        $csrfInput = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '">';
         ?>
 
         <!-- Header -->
@@ -22,11 +30,11 @@
             </div>
             <div class="stats">
                 <div class="stat-item">
-                    <span class="stat-number"><?= $stats['completed'] ?? 0 ?></span>
+                    <span class="stat-number"><?= htmlspecialchars((string)($stats['completed'] ?? 0)) ?></span>
                     <span class="stat-label">Completed</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-number"><?= $stats['pending'] ?? 0 ?></span>
+                    <span class="stat-number"><?= htmlspecialchars((string)($stats['pending'] ?? 0)) ?></span>
                     <span class="stat-label">Pending</span>
                 </div>
             </div>
@@ -35,16 +43,18 @@
         <!-- Messages -->
         <?php if (!empty($messages)): ?>
             <?php foreach ($messages as $message): ?>
-                <div class="alert alert-<?= htmlspecialchars($message['type']) ?>">
-                    <?= htmlspecialchars($message['text']) ?>
+                <div class="alert alert-<?= htmlspecialchars($message['type'] ?? 'info') ?>">
+                    <?= htmlspecialchars($message['text'] ?? '') ?>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
 
-        <!-- Create Task Form -->
+            <!-- Create Task Form -->
         <section class="create-task-section">
             <h2>Add New Task</h2>
             <form method="POST" action="?action=create" class="task-form">
+                <?= $csrfInput ?>
+                <input type="hidden" name="action" value="create">
                 <div class="form-group">
                     <input 
                         type="text" 
@@ -53,6 +63,8 @@
                         class="form-input" 
                         required
                         autofocus
+                        maxlength="255"
+                        autocomplete="off"
                     >
                 </div>
                 <div class="form-group">
@@ -61,6 +73,7 @@
                         placeholder="Description (optional)" 
                         class="form-textarea"
                         rows="2"
+                        maxlength="1000"
                     ></textarea>
                 </div>
                 <button type="submit" class="btn btn-primary btn-add">
@@ -72,33 +85,37 @@
         <!-- Task Lists -->
         <div class="tasks-container">
             <!-- Pending Tasks -->
-            <section class="task-section">
+            <section class="task-section" data-status="pending">
                 <h3 class="section-title">Pending Tasks</h3>
                 <div class="tasks-list">
                     <?php if (empty($pending)): ?>
                         <p class="empty-state">No pending tasks. Great job!</p>
                     <?php else: ?>
                         <?php foreach ($pending as $task): ?>
-                            <div class="task-item task-pending" data-id="<?= $task['id'] ?>" draggable="true">
+                            <div class="task-item task-pending" data-id="<?= htmlspecialchars((string)$task['id']) ?>" draggable="true">
                                 <span class="drag-handle" title="Glisser pour déplacer">⋮⋮</span>
                                 <form method="POST" action="?action=toggle" class="task-form-inline">
-                                    <input type="hidden" name="id" value="<?= $task['id'] ?>">
+                                    <?= $csrfInput ?>
+                                    <input type="hidden" name="id" value="<?= htmlspecialchars((string)$task['id']) ?>">
+                                    <input type="hidden" name="action" value="toggle">
                                     <button type="submit" class="task-checkbox" title="Mark as completed">
                                         
                                     </button>
                                 </form>
                                 <div class="task-content">
-                                    <h4 class="task-title"><?= htmlspecialchars($task['title']) ?></h4>
+                                    <h4 class="task-title"><?= htmlspecialchars($task['title'] ?? '') ?></h4>
                                     <?php if (!empty($task['description'])): ?>
                                         <p class="task-description"><?= htmlspecialchars($task['description']) ?></p>
                                     <?php endif; ?>
                                     <small class="task-date">
-                                        Created: <?= date($dateFormat, strtotime($task['created_at'])) ?>
+                                        Created: <?= isset($task['created_at']) ? date($dateFormat, strtotime($task['created_at'])) : '' ?>
                                     </small>
                                 </div>
                                 <span class="task-badge badge-pending">Pending</span>
                                 <form method="POST" action="?action=delete" class="task-delete" onsubmit="return confirm('Delete this task?');">
-                                    <input type="hidden" name="id" value="<?= $task['id'] ?>">
+                                    <?= $csrfInput ?>
+                                    <input type="hidden" name="id" value="<?= htmlspecialchars((string)$task['id']) ?>">
+                                    <input type="hidden" name="action" value="delete">
                                     <button type="submit" class="btn-delete" title="Delete">✕</button>
                                 </form>
                             </div>
@@ -108,37 +125,41 @@
             </section>
 
             <!-- Completed Tasks -->
-            <section class="task-section">
+            <section class="task-section" data-status="completed">
                 <h3 class="section-title">Completed Tasks</h3>
                 <div class="tasks-list">
                     <?php if (empty($completed)): ?>
                         <p class="empty-state">No completed tasks yet.</p>
                     <?php else: ?>
                         <?php foreach ($completed as $task): ?>
-                            <div class="task-item task-completed" data-id="<?= $task['id'] ?>" draggable="true">
+                            <div class="task-item task-completed" data-id="<?= htmlspecialchars((string)$task['id']) ?>" draggable="true">
                                 <span class="drag-handle" title="Glisser pour déplacer">⋮⋮</span>
                                 <form method="POST" action="?action=toggle" class="task-form-inline">
-                                    <input type="hidden" name="id" value="<?= $task['id'] ?>">
+                                    <?= $csrfInput ?>
+                                    <input type="hidden" name="id" value="<?= htmlspecialchars((string)$task['id']) ?>">
+                                    <input type="hidden" name="action" value="toggle">
                                     <button type="submit" class="task-checkbox" title="Mark as pending">
                                         
                                     </button>
                                 </form>
                                 <div class="task-content">
-                                    <h4 class="task-title"><?= htmlspecialchars($task['title']) ?></h4>
+                                    <h4 class="task-title"><?= htmlspecialchars($task['title'] ?? '') ?></h4>
                                     <?php if (!empty($task['description'])): ?>
                                         <p class="task-description"><?= htmlspecialchars($task['description']) ?></p>
                                     <?php endif; ?>
                                     <small class="task-date">
-                                        Created: <?= date($dateFormat, strtotime($task['created_at'])) ?>
+                                        Created: <?= isset($task['created_at']) ? date($dateFormat, strtotime($task['created_at'])) : '' ?>
                                     </small>
                                 </div>
                                 <span class="task-badge badge-completed">Completed</span>
                                 <form method="POST" action="?action=delete" class="task-delete" onsubmit="return confirm('Delete this task?');">
-                                    <input type="hidden" name="id" value="<?= $task['id'] ?>">
+                                    <?= $csrfInput ?>
+                                    <input type="hidden" name="id" value="<?= htmlspecialchars((string)$task['id']) ?>">
+                                    <input type="hidden" name="action" value="delete">
                                     <button type="submit" class="btn-delete" title="Delete">✕</button>
                                 </form>
                             </div>
-                            <?php endforeach; ?>
+                        <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
             </section>
@@ -152,4 +173,5 @@
 
     <script src="public/js/app.js"></script>
 </body>
-</html>                                                                                                                                                                  
+</html>
+

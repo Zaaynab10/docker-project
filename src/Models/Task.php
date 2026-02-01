@@ -1,7 +1,4 @@
 <?php
-/**
- * Task Model - Task management
- */
 
 namespace App\Models;
 
@@ -23,9 +20,9 @@ class Task
     public function getAll(): array
     {
         $stmt = $this->pdo->query(
-            "SELECT id, title, description, status, created_at, updated_at 
+            "SELECT id, title, description, status, task_order, created_at, updated_at 
              FROM tasks 
-             ORDER BY created_at DESC"
+             ORDER BY status ASC, task_order ASC, created_at DESC"
         );
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -54,12 +51,19 @@ class Task
             throw new \InvalidArgumentException('Title is required');
         }
 
+        // Get the next order for this status
         $stmt = $this->pdo->prepare(
-            "INSERT INTO tasks (title, description, status, created_at, updated_at) 
-             VALUES (?, ?, ?, NOW(), NOW())"
+            "SELECT COALESCE(MAX(task_order), -1) + 1 FROM tasks WHERE status = ?"
+        );
+        $stmt->execute([$status]);
+        $order = $stmt->fetchColumn();
+
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO tasks (title, description, status, task_order, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, NOW(), NOW())"
         );
         
-        if ($stmt->execute([$title, $description, $status])) {
+        if ($stmt->execute([$title, $description, $status, $order])) {
             return $this->pdo->lastInsertId();
         }
         
@@ -105,6 +109,66 @@ class Task
     }
 
     /**
+     * Reorder tasks within a status
+     * @param array $taskIds Ordered array of task IDs for a specific status
+     * @param string $status The status these tasks belong to
+     */
+    public function reorder(array $taskIds, string $status): bool
+    {
+        if (empty($taskIds)) {
+            return true;
+        }
+
+        $stmt = $this->pdo->prepare(
+            "UPDATE tasks SET task_order = ?, updated_at = NOW() WHERE id = ? AND status = ?"
+        );
+
+        foreach ($taskIds as $order => $id) {
+            $stmt->execute([$order, $id, $status]);
+        }
+
+        return true;
+    }
+
+    /**
+     * Reorder and optionally move a task to a different status
+     * @param int $taskId The task ID to reorder
+     * @param int $newOrder The new order position
+     * @param string|null $newStatus Optional new status (null to keep current)
+     */
+    public function reorderTask(int $taskId, int $newOrder, ?string $newStatus = null): bool
+    {
+        $task = $this->getById($taskId);
+        if (!$task) {
+            return false;
+        }
+
+        $currentStatus = $task['status'];
+        $status = $newStatus ?? $currentStatus;
+
+        // If moving to a different status, adjust orders in both lists
+        if ($newStatus !== null && $newStatus !== $currentStatus) {
+            // Decrease order of tasks after the moved task in the old list
+            $this->pdo->prepare(
+                "UPDATE tasks SET task_order = task_order - 1, updated_at = NOW() 
+                 WHERE status = ? AND task_order > ?"
+            )->execute([$currentStatus, $task['task_order']]);
+
+            // Increase order of tasks at or after the new position in the new list
+            $this->pdo->prepare(
+                "UPDATE tasks SET task_order = task_order + 1, updated_at = NOW() 
+                 WHERE status = ? AND task_order >= ?"
+            )->execute([$newStatus, $newOrder]);
+        }
+
+        // Update the task
+        $stmt = $this->pdo->prepare(
+            "UPDATE tasks SET task_order = ?, status = ?, updated_at = NOW() WHERE id = ?"
+        );
+        return $stmt->execute([$newOrder, $status, $taskId]);
+    }
+
+    /**
      * Delete a task
      */
     public function delete(int $id): bool
@@ -126,5 +190,13 @@ class Task
              FROM tasks"
         );
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'completed' => 0, 'pending' => 0];
+    }
+    
+    /**
+     * Get all valid statuses
+     */
+    public function getStatuses(): array
+    {
+        return ['pending', 'completed'];
     }
 }

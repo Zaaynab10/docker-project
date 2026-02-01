@@ -2,38 +2,71 @@ version: '3.9'
 
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.45
     container_name: todo_mysql
-    restart: always 
-    environment:  
+    restart: unless-stopped
+    environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:  
+    volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:  
-      test: ["CMD", "mysqladmin", "ping", "-h", "", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "mysql", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
     networks:
       - app-network
+    # Security: Read-only filesystem
+    read_only: true
+    # Security: Drop privileges
+    user: mysql
+    # Security: No new privileges
+    security_opt:
+      - no-new-privileges:true
 
-  app:
-    build:  # Build the app image from Dockerfile
-      context: .
-      dockerfile: Dockerfile
-    image: todo-app:latest
-    container_name: todo_app
-    restart: always  # Automatically restart if the container crashes or Docker restarts
+  # phpMyAdmin Service 
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: todo_phpmyadmin
+    restart: unless-stopped
     depends_on:
       mysql:
-        condition: service_healthy  
-    ports:  
+        condition: service_healthy
+    ports:
+      - "${PHPMYADMIN_PORT:-8081}:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # Security: Set absolute URI to prevent host header attacks
+      PMA_ABSOLUTE_URI: http://localhost:8081
+    networks:
+      - app-network
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: todo-app:prod
+    container_name: todo_app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
       - "${PHP_PORT}:80"
-    environment:  
+    environment:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
@@ -42,11 +75,21 @@ services:
       APP_DEBUG: false
     networks:
       - app-network
+    # Security: Read-only filesystem
+    read_only: true
+    # Security: Drop privileges
+    user: www-data
+    # Security: No new privileges
+    security_opt:
+      - no-new-privileges:true
+    # Security: Temp filesystem
+    tmpfs:
+      - /tmp
 
 volumes:
-  mysql_data:  # Docker volume to persist MySQL data
+  mysql_data:
     driver: local
 
 networks:
-  app-network: 
+  app-network:
     driver: bridge

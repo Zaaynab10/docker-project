@@ -1,6 +1,6 @@
 .PHONY: help up down stop restart logs build rebuild clean prune \
         prod-up prod-down prod-logs db-init db-migrate db-backup \
-        db-restore status shell db-shell info
+        db-restore status shell db-shell phpmyadmin info
 
 # Variables
 COMPOSE_FILE = docker-compose.yml
@@ -134,13 +134,30 @@ db-shell:
 	@echo "Opening MySQL CLI..."
 	docker compose -f $(COMPOSE_FILE) exec mysql mysql -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE}
 
+# Open phpMyAdmin in browser
+phpmyadmin:
+	@echo "Opening phpMyAdmin..."
+	@if command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open http://localhost:8081; \
+	elif command -v open >/dev/null 2>&1; then \
+		open http://localhost:8081; \
+	else \
+		echo "phpMyAdmin available at: http://localhost:8081"; \
+	fi
+
 # Show application info
 info:
 	@echo "Medical Task Manager - Environment Info"
 	@echo "App URL:      http://localhost:8080"
-	@echo "PhpMyAdmin:   http://localhost:8081"
+	@echo "phpMyAdmin:   http://localhost:8081"
 	@echo "Database:     MySQL 8.0"
 	@echo "PHP Version:  8.2"
+	@echo ""
+	@echo "Security Features:"
+	@echo "  - Read-only filesystem for all containers"
+	@echo "  - Non-root user (www-data, mysql)"
+	@echo "  - No new privileges security option"
+	@echo "  - phpMyAdmin with security hardening"
 
 # Show help
 help:
@@ -174,5 +191,6 @@ help:
 	@echo "  make status     Show container status"
 	@echo "  make shell      Open shell in app container"
 	@echo "  make db-shell   Open MySQL CLI"
+	@echo "  make phpmyadmin Open phpMyAdmin in browser"
 	@echo "  make info       Show environment info"
 	@echo "  make help       Show this help message"

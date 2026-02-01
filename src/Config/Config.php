@@ -15,9 +15,9 @@ class Config
             'db' => [
                 'host' => getenv('MYSQL_HOST') ?: 'localhost',
                 'port' => (int)(getenv('MYSQL_PORT') ?: 3306),
-                'user' => getenv('MYSQL_USER'),
-                'password' => getenv('MYSQL_PASSWORD'),
-                'database' => getenv('MYSQL_DATABASE'),
+                'user' => getenv('MYSQL_USER') ?: 'root',
+                'password' => getenv('MYSQL_PASSWORD') ?: '',
+                'database' => getenv('MYSQL_DATABASE') ?: 'todo_db',
                 'charset' => getenv('MYSQL_CHARSET') ?: 'utf8mb4',
             ],
             'app' => [
